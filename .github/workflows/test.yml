@@ -104,7 +104,7 @@ jobs:
             PYTHON_VERSION: "3.9"
             JOBLIB_TESTS_DEFAULT_PARALLEL_BACKEND: "threading"
           # Jobs whose Python versions start with "free-threaded" will run with
-          # pytest-run-parallel to catch thread-safety issues.
+          # pytest-run-parallel to catch thread-safety issues:
           - name: python3.14-free-threaded
             os: 'ubuntu-latest'
             PYTHON_VERSION: "free-threaded-3.14"
