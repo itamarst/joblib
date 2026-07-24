@@ -43,6 +43,8 @@ if [[ "$COVERAGE" == "true" ]]; then
     PIP_INSTALL_PACKAGES="$PIP_INSTALL_PACKAGES coverage pytest-cov"
 fi
 
+# pytest-run-parallel is used to run the same test in parallel on free-threaded
+# test runs, to catch thread-safety issues:
 if [[ "$ORIGINAL_PYTHON_VERSION" == free-threaded* ]]; then
     PIP_INSTALL_PACKAGES="$PIP_INSTALL_PACKAGES pytest-run-parallel"
 fi
