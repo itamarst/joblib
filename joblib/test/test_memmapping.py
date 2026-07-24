@@ -980,6 +980,7 @@ def test_memmapping_on_large_enough_dev_shm(factory):
         jmr.SYSTEM_SHARED_MEM_FS_MIN_SIZE = orig_size
 
 
+@pytest.mark.thread_unsafe  # https://github.com/joblib/joblib/issues/1794
 @with_numpy
 @with_multiprocessing
 @with_dev_shm
@@ -1012,6 +1013,7 @@ def test_memmapping_on_too_small_dev_shm(factory):
         jmr.SYSTEM_SHARED_MEM_FS_MIN_SIZE = orig_size
 
 
+@pytest.mark.thread_unsafe  # https://github.com/joblib/joblib/issues/1816
 @with_numpy
 @with_multiprocessing
 @parametrize(

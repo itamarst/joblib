@@ -138,6 +138,8 @@ def test_memory_integration(tmpdir):
 
 @parametrize("call_before_reducing", [True, False])
 def test_parallel_call_cached_function_defined_in_jupyter(tmpdir, call_before_reducing):
+    tmpdir = tmpdir / str(uuid4())
+
     # Calling an interactively defined memory.cache()'d function inside a
     # Parallel call used to clear the existing cache related to the said
     # function (https://github.com/joblib/joblib/issues/1035)
