@@ -10,7 +10,7 @@ if [[ "$PYTHON_VERSION" == free-threaded* ]]; then
     # thread-safety with free-threaded Python, for example numpy and coverage.tracer
     export PYTHON_GIL=0
     # For free-threaded Python, run parallel tests to validate thread-safety (at
-    # least somewhat.)
+    # least somewhat):
     NUM_CORES=$(python -c "import joblib; print(joblib.cpu_count())")
     PARALLEL_PYTEST_ARGS="--parallel-threads $NUM_CORES --iterations 1"
 else
