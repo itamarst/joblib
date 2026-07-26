@@ -220,8 +220,8 @@ def test_parallel_call_cached_function_defined_in_jupyter(tmpdir, call_before_re
                 # MemorizedFunc.__reduce__.
                 Parallel(n_jobs=2)(delayed(cached_f)(i) for i in [1, 2])
                 # Ensure the child process has time to close the file.
-                # Wait up to 5 seconds for slow CI runs
-                for _ in range(25):
+                # Wait up to 10 seconds for slow CI runs
+                for _ in range(50):
                     if len(os.listdir(f_cache_directory / "f")) == 3:
                         break
                     time.sleep(0.2)  # pragma: no cover
