@@ -16,6 +16,10 @@ from joblib.testing import raises
 
 from .test_memory import corrupt_single_cache_item, monkeypatch_cached_func_warn
 
+# asyncio support in pytest isn't thread-safe, so can't run these tests in
+# parallel.
+pytestmark = pytest.mark.thread_unsafe
+
 
 async def check_identity_lazy_async(func, accumulator, location):
     """Similar to check_identity_lazy_async for coroutine functions"""
@@ -28,7 +32,6 @@ async def check_identity_lazy_async(func, accumulator, location):
             assert len(accumulator) == i + 1
 
 
-@pytest.mark.thread_unsafe
 @pytest.mark.asyncio
 async def test_memory_integration_async(tmpdir):
     accumulator = list()
@@ -74,7 +77,6 @@ async def test_memory_integration_async(tmpdir):
     await memory.cache(f)(1)
 
 
-@pytest.mark.thread_unsafe
 @pytest.mark.asyncio
 async def test_no_memory_async():
     accumulator = list()
@@ -92,7 +94,6 @@ async def test_no_memory_async():
         assert len(accumulator) == current_accumulator + 1
 
 
-@pytest.mark.thread_unsafe
 @with_numpy
 @pytest.mark.asyncio
 async def test_memory_numpy_check_mmap_mode_async(tmpdir, monkeypatch):
@@ -133,7 +134,6 @@ async def test_memory_numpy_check_mmap_mode_async(tmpdir, monkeypatch):
     assert d.mode == "r"
 
 
-@pytest.mark.thread_unsafe
 @pytest.mark.asyncio
 async def test_call_and_shelve_async(tmpdir):
     async def f(x, y=1):
@@ -166,7 +166,6 @@ async def test_call_and_shelve_async(tmpdir):
         result.clear()  # Do nothing if there is no cache.
 
 
-@pytest.mark.thread_unsafe
 @pytest.mark.asyncio
 async def test_memorized_func_call_async(tmp_path):
     async def ff(x, counter):
