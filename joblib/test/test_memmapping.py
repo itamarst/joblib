@@ -9,7 +9,6 @@ import subprocess
 import sys
 import threading
 from time import sleep
-from uuid import uuid4
 
 import pytest
 
@@ -362,8 +361,6 @@ def test_pool_with_memmap(factory, tmpdir):
 )
 def test_pool_with_memmap_array_view(factory, tmpdir):
     """Check that subprocess can access and update shared memory array"""
-    tmpdir = tmpdir.mkdir(str(uuid4()))
-
     assert_array_equal = np.testing.assert_array_equal
 
     # Fork the subprocess before allocating the objects to be passed
