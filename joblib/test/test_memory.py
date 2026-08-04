@@ -92,6 +92,7 @@ def monkeypatch_cached_func_warn(func, monkeypatch_fixture):
 # Tests
 def test_memory_integration(tmpdir):
     """Simple test of memory lazy evaluation."""
+    print(tmpdir)
     accumulator = list()
 
     # Rmk: this function has the same name than a module-level function,
@@ -136,6 +137,7 @@ def test_memory_integration(tmpdir):
     memory.cache(f)(1)
 
 
+@pytest.mark.thread_unsafe  # https://github.com/joblib/joblib/issues/1794
 @parametrize("call_before_reducing", [True, False])
 def test_parallel_call_cached_function_defined_in_jupyter(tmpdir, call_before_reducing):
     tmpdir = tmpdir / str(uuid4())
@@ -220,8 +222,8 @@ def test_parallel_call_cached_function_defined_in_jupyter(tmpdir, call_before_re
                 # MemorizedFunc.__reduce__.
                 Parallel(n_jobs=2)(delayed(cached_f)(i) for i in [1, 2])
                 # Ensure the child process has time to close the file.
-                # Wait up to 10 seconds for slow CI runs
-                for _ in range(50):
+                # Wait up to 5 seconds for slow CI runs
+                for _ in range(25):
                     if len(os.listdir(f_cache_directory / "f")) == 3:
                         break
                     time.sleep(0.2)  # pragma: no cover
