@@ -91,7 +91,6 @@ def monkeypatch_cached_func_warn(func, monkeypatch_fixture):
 # Tests
 def test_memory_integration(tmpdir):
     """Simple test of memory lazy evaluation."""
-    print(tmpdir)
     accumulator = list()
 
     # Rmk: this function has the same name than a module-level function,
