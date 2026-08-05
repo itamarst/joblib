@@ -376,7 +376,7 @@ def test_argument_change(tmpdir):
     """Check that if a function has a side effect in its arguments, it
     should use the hash of changing arguments.
     """
-    memory = Memory(location=tmpdir, verbose=0)
+    memory = Memory(location=tmpdir.strpath, verbose=0)
 
     def count_and_append(x=[]):
         """A function with a side effect in its arguments.
@@ -1433,7 +1433,7 @@ def test_info_log(tmpdir, caplog):
     caplog.set_level(logging.INFO)
     x = 3
 
-    memory = Memory(location=tmpdir, verbose=20)
+    memory = Memory(location=tmpdir.strpath, verbose=20)
 
     @memory.cache
     def f(x):
@@ -1443,7 +1443,7 @@ def test_info_log(tmpdir, caplog):
     assert "Querying" in caplog.text
     caplog.clear()
 
-    memory = Memory(location=tmpdir, verbose=0)
+    memory = Memory(location=tmpdir.strpath, verbose=0)
 
     @memory.cache
     def f(x):
