@@ -76,6 +76,11 @@ from joblib.parallel import (
     register_parallel_backend,
 )
 
+# A huge number of tests are not thread safe due to #1816 and #1743. Once those
+# are fixed, remove this and fix anything that's left.
+pytestmark = pytest.mark.thread_unsafe
+
+
 RETURN_GENERATOR_BACKENDS = BACKENDS.copy()
 RETURN_GENERATOR_BACKENDS.pop("multiprocessing", None)
 
@@ -815,14 +820,18 @@ def test_njobs_converted_to_int(backend, n_jobs):
 
 
 def test_register_parallel_backend():
+    test_backend = "test_backend-" + str(uuid4())
     try:
-        register_parallel_backend("test_backend", FakeParallelBackend)
-        assert "test_backend" in BACKENDS
-        assert BACKENDS["test_backend"] == FakeParallelBackend
+        register_parallel_backend(test_backend, FakeParallelBackend)
+        assert test_backend in BACKENDS
+        assert BACKENDS[test_backend] == FakeParallelBackend
     finally:
-        del BACKENDS["test_backend"]
+        del BACKENDS[test_backend]
 
 
+# Changing the default backend is inherently not thread safe, so this is not a
+# problem:
+@pytest.mark.thread_unsafe
 def test_overwrite_default_backend():
     default_backend_orig = parallel.DEFAULT_BACKEND
     assert _active_backend_type() == get_default_backend_instance()
@@ -1399,7 +1408,7 @@ def test_memmap_with_big_offset(tmpdir):
 
 
 def test_warning_about_timeout_not_supported_by_backend():
-    with warnings.catch_warnings(record=True) as warninfo:
+    with pytest.warns() as warninfo:
         Parallel(n_jobs=1, timeout=1)(delayed(square)(i) for i in range(50))
     assert len(warninfo) == 1
     w = warninfo[0]
@@ -1629,6 +1638,7 @@ def test_multiple_generator_call_separated_gc(backend, return_as_1, return_as_2,
         assert parallel._aborting
 
 
+@pytest.mark.thread_unsafe  # https://github.com/joblib/joblib/issues/1794
 @with_numpy
 @with_multiprocessing
 @parametrize("backend", PROCESS_BACKENDS)
