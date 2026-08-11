@@ -17,11 +17,17 @@ import threading
 import time
 import warnings
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from inspect import Signature
 from math import floor, log10, sqrt
 from multiprocessing import TimeoutError
 from numbers import Integral
+from typing import TYPE_CHECKING
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 from ._multiprocessing_helpers import mp
 
@@ -977,7 +983,45 @@ def effective_n_jobs(n_jobs=-1):
 
 
 ###############################################################################
-class Parallel(Logger):
+class _FastThreadedParallel:
+    """Similar interface to :class:`Parallel`, but with lower overhead."""
+
+    def __init__(self, n_jobs: int, return_as: Literal["list", "generator"]):
+        self.return_generator = return_as == "generator"
+        self._effective_n_jobs = n_jobs
+        self._calling = False
+
+    def __call__(self, iterable):
+        self._calling = True
+        def run(params):
+            func, args, kwargs = params
+            return func(*args, **kwargs)
+
+        self._pool = pool = ThreadPoolExecutor(self._effective_n_jobs)
+        result = pool.map(run, iterable)
+        if not self.return_generator:
+            with pool:
+                return list(result)
+        else:
+
+            def _gen():
+                try:
+                    yield from result
+                finally:
+                    pool.shutdown()
+
+            return _gen()
+
+    def __enter__(self):
+        self._calling = False
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.return_generator and self._calling:
+            self._pool.shutdown(wait=False)
+
+
+class _Parallel(Logger):
     """Helper class for readable parallel mapping.
 
     Read more in the :ref:`User Guide <parallel>`.
@@ -2099,3 +2143,46 @@ class Parallel(Logger):
 
     def __repr__(self):
         return "%s(n_jobs=%s)" % (self.__class__.__name__, self.n_jobs)
+
+
+@functools.wraps(_Parallel)
+def Parallel(*args, **kwargs):
+    # Use normal _Parallel in most cases, but switch to _FastThreadedParallel
+    # if backend is threaded, and a specific set of supported arguments were
+    # given.
+    signature = Signature.from_callable(Parallel.__init__).bind(None, *args, **kwargs)
+    signature.apply_defaults()
+    arguments = {
+        key: value.default_value if hasattr(value, "default_value") else value
+        for (key, value) in signature.arguments.items()
+    }
+
+    concrete_default_parallel_config = {
+        key: value.default_value if hasattr(value, "default_value") else value
+        for (key, value) in default_parallel_config.items()
+    }
+    config = getattr(_backend, "config", concrete_default_parallel_config)
+
+    backend = arguments["backend"] or config["backend"]
+
+    n_jobs = arguments["n_jobs"]
+    if n_jobs is None:
+        n_jobs = config["n_jobs"]
+    n_jobs = effective_n_jobs(arguments["n_jobs"])
+
+    is_threaded = backend == "threading" or (
+        backend is None
+        and (arguments["prefer"] == "threads" or arguments["require"] == "sharedmem")
+    )
+    if (
+        is_threaded
+        # Make sure only supported arguments are being passed in:
+        and arguments["return_as"] in ("list", "generator")
+        and arguments["timeout"] is None
+        # No point in threading if there is only one thread, this will be
+        # handled by the sequential backend in practice:
+        and n_jobs > 1
+    ):
+        return _FastThreadedParallel(n_jobs, arguments["return_as"])
+    else:
+        return _Parallel(*args, **kwargs)
