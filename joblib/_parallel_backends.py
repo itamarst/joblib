@@ -11,6 +11,7 @@ import threading
 import warnings
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
+from math import ceil
 from typing import Any, Callable
 
 from ._multiprocessing_helpers import mp
@@ -48,6 +49,28 @@ class _MaxCores(threading.local):
 
 
 _MAX_CORES = _MaxCores()
+
+
+def _split_up_cores(total_cores: int, n_jobs: int) -> int:
+    """
+    Given the total number of cores and a number of workers, come up with a
+    reasonable number of cores per worker.
+
+    The algorithm tries to compromise between two extremes:
+
+    With ``total_cores // n_jobs``, you can end up not using all cores.  So e.g
+    with 16 cores and 9 workers, you end up only using 9 cores instead of 16.
+
+    With ``int(ceil(total_cores / n_jobs))``, you can end up with significant
+    over-saturation.  So e.g with 16 cores and 15 workers, you end up with 30
+    assigned cores for only 16 available ones.
+    """
+    upper = max(int(ceil(total_cores / n_jobs)), 1)
+    lower = max(total_cores // n_jobs, 1)
+    if upper * n_jobs <= total_cores * 1.25:
+        return upper
+    else:
+        return lower
 
 
 class ParallelBackendBase(metaclass=ABCMeta):
@@ -253,7 +276,7 @@ class ParallelBackendBase(metaclass=ABCMeta):
         OpenBLAS libraries in the child processes.
         """
         explicit_n_threads = self.inner_max_num_threads
-        default_n_threads = max(_MAX_CORES.get() // n_jobs, 1)
+        default_n_threads = _split_up_cores(_MAX_CORES.get(), n_jobs)
 
         # Set the inner environment variables to self.inner_max_num_threads if
         # it is given. Else, default to cpu_count // n_jobs unless the variable
@@ -534,7 +557,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
 
         if self._pool is None:
             available_cores = effective_n_jobs(-1)
-            cores_per_thread = max(available_cores // self._n_jobs, 1)
+            cores_per_thread = _split_up_cores(available_cores, self._n_jobs)
             self._pool = ThreadPool(
                 self._n_jobs,
                 initializer=lambda: _MAX_CORES.set_thread_limit(cores_per_thread),

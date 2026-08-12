@@ -27,7 +27,7 @@ import pytest
 import joblib
 from joblib import dump, load, parallel
 from joblib._multiprocessing_helpers import mp
-from joblib._parallel_backends import _SetEnvInitializer
+from joblib._parallel_backends import _SetEnvInitializer, _split_up_cores
 from joblib.test.common import (
     IS_GIL_DISABLED,
     np,
@@ -190,6 +190,10 @@ def _measure_effective() -> tuple[int, int]:
 
 @parametrize("backend", PARALLEL_BACKENDS)
 def test_negative_effective_n_jobs_affected_by_parent_pool(backend):
+    """
+    Nested pools get fewer workers, approximately cpu_count() divided by
+    parent's number of workers.
+    """
     n_jobs = max(cpu_count() // 2, 1)
     results = set(
         Parallel(n_jobs=n_jobs, backend=backend)(
@@ -200,7 +204,21 @@ def test_negative_effective_n_jobs_affected_by_parent_pool(backend):
 
     (available_in_worker, available_in_worker_minus_1) = results.pop()
     assert available_in_worker_minus_1 == max(available_in_worker - 1, 1)
-    assert available_in_worker == max(cpu_count() // n_jobs, 1)
+    # See _split_up_cores() for details:
+    expected = _split_up_cores(cpu_count(), n_jobs)
+    assert available_in_worker == expected
+
+
+def test_split_up_cores():
+    """
+    Test heuristic for determining number of workers in nested pool.
+    """
+    for max_cores in range(1, 100):
+        for n_jobs in range(1, max_cores + 1):
+            split = _split_up_cores(max_cores, n_jobs)
+            lower = max(max_cores // n_jobs, 1)
+            assert split in (lower, lower + 1)
+            assert split * n_jobs <= 1.25 * max_cores
 
 
 ###############################################################################
