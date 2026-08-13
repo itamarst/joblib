@@ -51,6 +51,16 @@ class _MaxCores(threading.local):
 _MAX_CORES = _MaxCores()
 
 
+def set_thread_cores_limit(cores: int) -> None:
+    """
+    Set the maximum number of cores available to this thread.
+
+    Allows for other thread pool implementations to interoperate with joblib's
+    core limiting functionality.
+    """
+    _MAX_CORES.set_thread_limit(cores)
+
+
 def _split_up_cores(total_cores: int, n_jobs: int) -> int:
     """
     Given the total number of cores and a number of workers, come up with a
@@ -560,7 +570,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             cores_per_thread = _split_up_cores(available_cores, self._n_jobs)
             self._pool = ThreadPool(
                 self._n_jobs,
-                initializer=lambda: _MAX_CORES.set_thread_limit(cores_per_thread),
+                initializer=lambda: set_thread_cores_limit(cores_per_thread),
             )
         return self._pool
 

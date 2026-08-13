@@ -221,6 +221,28 @@ def test_split_up_cores():
             assert split * n_jobs <= 1.25 * max_cores
 
 
+@skipif(parallel.effective_n_jobs(-1) < 2, reason="need at least two cores")
+def test_set_thread_cores_limit() -> None:
+    """
+    Test the public API for setting per-thread limits.
+    """
+    limit = parallel.effective_n_jobs(-1)
+    new_limit = limit - 1
+
+    result = []
+
+    def run():
+        parallel.set_thread_cores_limit(new_limit)
+        result.append(parallel.effective_n_jobs(-1))
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
+    assert result == [new_limit]
+    # Shouldn't affect other threads!
+    assert parallel.effective_n_jobs(-1) == limit
+
+
 ###############################################################################
 # Test parallel
 
