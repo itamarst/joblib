@@ -23,6 +23,8 @@ from multiprocessing import TimeoutError
 from numbers import Integral
 from uuid import uuid4
 
+from threadpoolctl import threadpool_limits
+
 from ._multiprocessing_helpers import mp
 
 # Make sure that those two classes are part of the public joblib.parallel API
@@ -1423,6 +1425,9 @@ class Parallel(Logger):
         return 1
 
     def _terminate_and_reset(self):
+        if getattr(self._backend, "uses_threads", False) and self._calling:
+            self._thread_limiter.restore_original_limits()
+            del self._thread_limiter
         if hasattr(self._backend, "stop_call") and self._calling:
             self._backend.stop_call()
         self._calling = False
@@ -1669,6 +1674,10 @@ class Parallel(Logger):
         self._aborted = True
 
     def _start(self, iterator, pre_dispatch):
+        if getattr(self._backend, "uses_threads", False):
+            # Used to restore limits when when done:
+            self._thread_limiter = threadpool_limits()
+
         # Only set self._iterating to True if at least a batch
         # was dispatched. In particular this covers the edge
         # case of Parallel used with an exhausted iterator. If

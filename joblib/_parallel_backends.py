@@ -9,6 +9,8 @@ import threading
 import warnings
 from abc import ABCMeta, abstractmethod
 
+from threadpoolctl import threadpool_limits
+
 from ._multiprocessing_helpers import mp
 from ._utils import (
     _retrieve_traceback_capturing_wrapped_call,
@@ -495,6 +497,10 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             raise FallbackToBackend(SequentialBackend(nesting_level=self.nesting_level))
         self.parallel = parallel
         self._n_jobs = n_jobs
+        # TODO Use logic from https://github.com/joblib/joblib/pull/1825 to
+        # choose the limit. Whether it happens in this PR or in that PR
+        # depends which is merged first.
+        self._limit_in_sub_threads = cpu_count() // n_jobs
         return n_jobs
 
     def _get_pool(self):
@@ -504,7 +510,12 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
         call to apply_async.
         """
         if self._pool is None:
-            self._pool = ThreadPool(self._n_jobs)
+            self._pool = ThreadPool(
+                self._n_jobs,
+                initializer=lambda: threadpool_limits(
+                    limits=self._limit_in_sub_threads
+                ),
+            )
         return self._pool
 
 

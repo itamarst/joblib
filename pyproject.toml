@@ -28,6 +28,7 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 dependencies = [
     "cloudpickle>=3.0",
+    "threadpoolctl",  # TODO need version 3.7, as yet unreleased, for deadlock fix
 ]
 
 [project.optional-dependencies]
@@ -42,7 +43,6 @@ test = [
     "pytest-cov",
     "pytest-run-parallel",
     "pytest-timeout",
-    "threadpoolctl",
 ]
 
 docs = [
