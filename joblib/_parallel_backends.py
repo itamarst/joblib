@@ -230,7 +230,7 @@ class ParallelBackendBase(metaclass=ABCMeta):
         """
         explicit_n_threads = self.inner_max_num_threads
         if explicit_n_threads is None:
-            max(cpu_count() // n_jobs, 1)
+            return max(cpu_count() // n_jobs, 1)
         else:
             return explicit_n_threads
 
@@ -293,6 +293,7 @@ class SequentialBackend(ParallelBackendBase):
     """
 
     uses_threads = True
+    supports_inner_max_num_threads = True
     supports_timeout = False
     supports_retrieve_callback = False
     supports_sharedmem = True
@@ -499,6 +500,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
     ThreadingBackend is used as the default backend for nested calls.
     """
 
+    supports_inner_max_num_threads = True
     supports_retrieve_callback = True
     uses_threads = True
     supports_sharedmem = True
@@ -511,7 +513,9 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             raise FallbackToBackend(SequentialBackend(nesting_level=self.nesting_level))
         self.parallel = parallel
         self._n_jobs = n_jobs
-        self._limit_in_sub_threads = self._n_threads_for_worker_external_libs(n_jobs)
+        self._external_libs_inner_thread_limit = (
+            self._n_threads_for_worker_external_libs(n_jobs)
+        )
         return n_jobs
 
     def _get_pool(self):
@@ -524,7 +528,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             self._pool = ThreadPool(
                 self._n_jobs,
                 initializer=lambda: threadpool_limits(
-                    limits=self._limit_in_sub_threads
+                    limits=self._external_libs_inner_thread_limit
                 ),
             )
         return self._pool

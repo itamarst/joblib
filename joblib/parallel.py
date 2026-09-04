@@ -327,10 +327,10 @@ class parallel_config:
     inner_max_num_threads: int, default=None
         If not None, overwrites the limit set on the number of threads
         usable in some third-party library threadpools like OpenBLAS,
-        MKL or OpenMP. This is only used with the ``loky`` and ``threading``
-        backends. The ``threading`` backend is limited to OpenMP and BLAS,
-        whereas the ``loky`` backend restricts additional third-party
-        libraries.
+        MKL or OpenMP. This is only used with the ``loky``, ``sequential``
+        and ``threading`` backends. The ``threading`` and ``sequential``
+        backends are limited to OpenMP and BLAS, whereas the ``loky`` backend
+        restricts additional third-party libraries.
 
     backend_params: dict
         Additional parameters to pass to the backend constructor when
@@ -1930,6 +1930,9 @@ class Parallel(Logger):
         overhead of calling sequential tasks with `joblib`.
         """
         try:
+            limiter = threadpool_limits(
+                limits=self._backend._n_threads_for_worker_external_libs(1)
+            )
             self._iterating = True
             self._original_iterator = iterable
             batch_size = self._get_batch_size()
@@ -1960,6 +1963,7 @@ class Parallel(Logger):
             self._aborted = True
             raise
         finally:
+            limiter.restore_original_limits()
             self._running = False
             self._iterating = False
             self._original_iterator = None

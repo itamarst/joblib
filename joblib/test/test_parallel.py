@@ -1913,7 +1913,7 @@ def _run_parallel_sum():
 
 @parametrize("backend", ([None, "loky"] if mp is not None else [None]))
 @skipif(parallel_sum is None, reason="Need OpenMP helper compiled")
-def test_parallel_thread_limit(backend):
+def test_parallel_subprocess_thread_limit(backend):
     results = Parallel(n_jobs=2, backend=backend)(
         delayed(_run_parallel_sum)() for _ in range(2)
     )
@@ -2057,7 +2057,10 @@ def test_threadpool_limitation_in_child_loky(n_jobs):
 @parametrize("inner_max_num_threads", [1, 2, 4, None])
 @parametrize("n_jobs", [2, -1])
 @parametrize("context", [parallel_config, parallel_backend])
-def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_threads):
+@parametrize("backend", ["loky", "threading", "sequential"])
+def test_threadpool_limitation_in_child_context(
+    backend, context, n_jobs, inner_max_num_threads
+):
     # Check that the protection against oversubscription in workers is working
     # using threadpoolctl functionalities.
 
@@ -2066,15 +2069,13 @@ def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_t
     if len(parent_info) == 0:
         pytest.skip(reason="Need a version of numpy linked to BLAS")
 
-    with context("loky", inner_max_num_threads=inner_max_num_threads):
+    with context(backend, inner_max_num_threads=inner_max_num_threads):
         workers_threadpool_infos = Parallel(n_jobs=n_jobs)(
             delayed(_check_numpy_threadpool_limits)() for i in range(2)
         )
 
-    n_jobs = effective_n_jobs(n_jobs)
-    if n_jobs == 1:
-        expected_child_num_threads = parent_info[0]["num_threads"]
-    elif inner_max_num_threads is None:
+    n_jobs = 1 if backend == "sequential" else effective_n_jobs(n_jobs)
+    if inner_max_num_threads is None:
         expected_child_num_threads = max(cpu_count() // n_jobs, 1)
     else:
         expected_child_num_threads = inner_max_num_threads
@@ -2082,6 +2083,11 @@ def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_t
     check_child_num_threads(
         workers_threadpool_infos, parent_info, expected_child_num_threads
     )
+
+    # Ensure limits were restored:
+    final_parent_info = _check_numpy_threadpool_limits()
+    for old, new in zip(parent_info, final_parent_info):
+        assert old["num_threads"] == new["num_threads"]
 
 
 @with_multiprocessing
