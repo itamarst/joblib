@@ -327,7 +327,10 @@ class parallel_config:
     inner_max_num_threads: int, default=None
         If not None, overwrites the limit set on the number of threads
         usable in some third-party library threadpools like OpenBLAS,
-        MKL or OpenMP. This is only used with the ``loky`` backend.
+        MKL or OpenMP. This is only used with the ``loky`` and ``threading``
+        backends. The ``threading`` backend is limited to OpenMP and BLAS,
+        whereas the ``loky`` backend restricts additional third-party
+        libraries.
 
     backend_params: dict
         Additional parameters to pass to the backend constructor when

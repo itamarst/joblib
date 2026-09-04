@@ -220,6 +220,20 @@ class ParallelBackendBase(metaclass=ABCMeta):
         else:
             return ThreadingBackend(nesting_level=nesting_level), None
 
+    def _n_threads_for_worker_external_libs(self, n_jobs: int) -> int:
+        """Return limit on number of threads for external libraries.
+
+        This can be used by threading backends to limit things like BLAS and
+        OpenMP.
+
+        Should for the most part match logic in `_prepare_worker_env`.
+        """
+        explicit_n_threads = self.inner_max_num_threads
+        if explicit_n_threads is None:
+            max(cpu_count() // n_jobs, 1)
+        else:
+            return explicit_n_threads
+
     def _prepare_worker_env(self, n_jobs):
         """Return environment variables limiting threadpools in external libs.
 
@@ -497,10 +511,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             raise FallbackToBackend(SequentialBackend(nesting_level=self.nesting_level))
         self.parallel = parallel
         self._n_jobs = n_jobs
-        # TODO Use logic from https://github.com/joblib/joblib/pull/1825 to
-        # choose the limit. Whether it happens in this PR or in that PR
-        # depends which is merged first.
-        self._limit_in_sub_threads = cpu_count() // n_jobs
+        self._limit_in_sub_threads = self._n_threads_for_worker_external_libs(n_jobs)
         return n_jobs
 
     def _get_pool(self):
