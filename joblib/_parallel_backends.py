@@ -17,7 +17,9 @@ from ._utils import (
     _TracebackCapturingWrapper,
 )
 
-if mp is not None:
+if mp is None:
+    from os import cpu_count
+else:
     from multiprocessing.pool import ThreadPool
 
     from .executor import get_memmapping_executor
