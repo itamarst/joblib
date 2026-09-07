@@ -1929,6 +1929,7 @@ class Parallel(Logger):
         This simplifies the traceback in case of errors and reduces the
         overhead of calling sequential tasks with `joblib`.
         """
+        limiter = None
         try:
             limiter = threadpool_limits(
                 limits=self._backend._n_threads_for_worker_external_libs(1)
@@ -1963,7 +1964,9 @@ class Parallel(Logger):
             self._aborted = True
             raise
         finally:
-            limiter.restore_original_limits()
+            # limiter might be None if instantiating it failed.
+            if limiter is not None:
+                limiter.restore_original_limits()
             self._running = False
             self._iterating = False
             self._original_iterator = None

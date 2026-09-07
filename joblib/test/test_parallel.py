@@ -891,6 +891,7 @@ class ParameterizedParallelBackend(SequentialBackend):
         if param is None:
             raise ValueError("param should not be None")
         self.param = param
+        super().__init__()
 
 
 @parametrize("context", [parallel_config, parallel_backend])
@@ -1875,9 +1876,13 @@ def test_thread_bomb_mitigation(context, backend):
     # Test that recursive parallelism raises a recursion rather than
     # saturating the operating system resources by creating a unbounded number
     # of threads.
+    extra_exceptions = []
+    sys.unraisablehook = lambda arg: extra_exceptions.append(arg.exc_value)
+
     with context(backend, n_jobs=2):
         with raises(BaseException) as excinfo:
             _recursive_parallel()
+
     exc = excinfo.value
     if backend == "loky":
         # Local import because loky may not be importable for lack of
@@ -1894,6 +1899,8 @@ def test_thread_bomb_mitigation(context, backend):
             pytest.xfail("Loky worker crash when serializing RecursionError")
 
     assert isinstance(exc, RecursionError)
+    for exc in extra_exceptions:
+        assert isinstance(exc, RecursionError)
 
 
 def _run_parallel_sum():
