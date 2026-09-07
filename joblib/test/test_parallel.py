@@ -2058,8 +2058,9 @@ def test_threadpool_limitation_in_child_loky(n_jobs):
 @parametrize("n_jobs", [2, -1])
 @parametrize("context", [parallel_config, parallel_backend])
 @parametrize("backend", ["loky", "threading", "sequential"])
+@parametrize("return_as", ["list", "generator", "generator_unordered"])
 def test_threadpool_limitation_in_child_context(
-    backend, context, n_jobs, inner_max_num_threads
+    return_as, backend, context, n_jobs, inner_max_num_threads
 ):
     # Check that the protection against oversubscription in workers is working
     # using threadpoolctl functionalities.
@@ -2070,8 +2071,10 @@ def test_threadpool_limitation_in_child_context(
         pytest.skip(reason="Need a version of numpy linked to BLAS")
 
     with context(backend, inner_max_num_threads=inner_max_num_threads):
-        workers_threadpool_infos = Parallel(n_jobs=n_jobs)(
-            delayed(_check_numpy_threadpool_limits)() for i in range(2)
+        workers_threadpool_infos = list(
+            Parallel(n_jobs=n_jobs, return_as=return_as)(
+                delayed(_check_numpy_threadpool_limits)() for i in range(2)
+            )
         )
 
     n_jobs = 1 if backend == "sequential" else effective_n_jobs(n_jobs)
