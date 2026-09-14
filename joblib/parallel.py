@@ -23,6 +23,8 @@ from multiprocessing import TimeoutError
 from numbers import Integral
 from uuid import uuid4
 
+from threadpoolctl import threadpool_limits
+
 from ._multiprocessing_helpers import mp
 
 # Make sure that those two classes are part of the public joblib.parallel API
@@ -329,7 +331,10 @@ class parallel_config:
     inner_max_num_threads: int, default=None
         If not None, overwrites the limit set on the number of threads
         usable in some third-party library threadpools like OpenBLAS,
-        MKL or OpenMP. This is only used with the ``loky`` backend.
+        MKL or OpenMP. This is only used with the ``loky``, ``sequential``
+        and ``threading`` backends. The ``threading`` and ``sequential``
+        backends are limited to OpenMP and BLAS, whereas the ``loky`` backend
+        restricts additional third-party libraries.
 
     backend_params: dict
         Additional parameters to pass to the backend constructor when
@@ -1431,6 +1436,9 @@ class Parallel(Logger):
         return 1
 
     def _terminate_and_reset(self):
+        if getattr(self._backend, "uses_threads", False) and self._calling:
+            self._thread_limiter.restore_original_limits()
+            del self._thread_limiter
         if hasattr(self._backend, "stop_call") and self._calling:
             self._backend.stop_call()
         self._calling = False
@@ -1677,6 +1685,10 @@ class Parallel(Logger):
         self._aborted = True
 
     def _start(self, iterator, pre_dispatch):
+        if getattr(self._backend, "uses_threads", False):
+            # Used to restore limits when when done:
+            self._thread_limiter = threadpool_limits()
+
         # Only set self._iterating to True if at least a batch
         # was dispatched. In particular this covers the edge
         # case of Parallel used with an exhausted iterator. If
@@ -1925,7 +1937,11 @@ class Parallel(Logger):
         This simplifies the traceback in case of errors and reduces the
         overhead of calling sequential tasks with `joblib`.
         """
+        limiter = None
         try:
+            limiter = threadpool_limits(
+                limits=self._backend._n_threads_for_worker_external_libs(1)
+            )
             self._iterating = True
             self._original_iterator = iterable
             batch_size = self._get_batch_size()
@@ -1956,6 +1972,9 @@ class Parallel(Logger):
             self._aborted = True
             raise
         finally:
+            # limiter might be None if instantiating it failed.
+            if limiter is not None:
+                limiter.restore_original_limits()
             self._running = False
             self._iterating = False
             self._original_iterator = None

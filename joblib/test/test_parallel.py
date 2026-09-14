@@ -929,6 +929,7 @@ class ParameterizedParallelBackend(SequentialBackend):
         if param is None:
             raise ValueError("param should not be None")
         self.param = param
+        super().__init__()
 
 
 @parametrize("context", [parallel_config, parallel_backend])
@@ -1913,9 +1914,13 @@ def test_thread_bomb_mitigation(context, backend):
     # Test that recursive parallelism raises a recursion rather than
     # saturating the operating system resources by creating a unbounded number
     # of threads.
+    extra_exceptions = []
+    sys.unraisablehook = lambda arg: extra_exceptions.append(arg.exc_value)
+
     with context(backend, n_jobs=2):
         with raises(BaseException) as excinfo:
             _recursive_parallel()
+
     exc = excinfo.value
     if backend == "loky":
         # Local import because loky may not be importable for lack of
@@ -1932,6 +1937,8 @@ def test_thread_bomb_mitigation(context, backend):
             pytest.xfail("Loky worker crash when serializing RecursionError")
 
     assert isinstance(exc, RecursionError)
+    for exc in extra_exceptions:
+        assert isinstance(exc, RecursionError)
 
 
 def _run_parallel_sum():
@@ -1951,7 +1958,7 @@ def _run_parallel_sum():
 
 @parametrize("backend", ([None, "loky"] if mp is not None else [None]))
 @skipif(parallel_sum is None, reason="Need OpenMP helper compiled")
-def test_parallel_thread_limit(backend):
+def test_parallel_subprocess_thread_limit(backend):
     results = Parallel(n_jobs=2, backend=backend)(
         delayed(_run_parallel_sum)() for _ in range(2)
     )
@@ -2095,7 +2102,11 @@ def test_threadpool_limitation_in_child_loky(n_jobs):
 @parametrize("inner_max_num_threads", [1, 2, 4, None])
 @parametrize("n_jobs", [2, -1])
 @parametrize("context", [parallel_config, parallel_backend])
-def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_threads):
+@parametrize("backend", ["loky", "threading", "sequential"])
+@parametrize("return_as", ["list", "generator", "generator_unordered"])
+def test_threadpool_limitation_in_child_context(
+    return_as, backend, context, n_jobs, inner_max_num_threads
+):
     # Check that the protection against oversubscription in workers is working
     # using threadpoolctl functionalities.
 
@@ -2104,15 +2115,15 @@ def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_t
     if len(parent_info) == 0:
         pytest.skip(reason="Need a version of numpy linked to BLAS")
 
-    with context("loky", inner_max_num_threads=inner_max_num_threads):
-        workers_threadpool_infos = Parallel(n_jobs=n_jobs)(
-            delayed(_check_numpy_threadpool_limits)() for i in range(2)
+    with context(backend, inner_max_num_threads=inner_max_num_threads):
+        workers_threadpool_infos = list(
+            Parallel(n_jobs=n_jobs, return_as=return_as)(
+                delayed(_check_numpy_threadpool_limits)() for i in range(2)
+            )
         )
 
-    n_jobs = effective_n_jobs(n_jobs)
-    if n_jobs == 1:
-        expected_child_num_threads = parent_info[0]["num_threads"]
-    elif inner_max_num_threads is None:
+    n_jobs = 1 if backend == "sequential" else effective_n_jobs(n_jobs)
+    if inner_max_num_threads is None:
         expected_child_num_threads = max(cpu_count() // n_jobs, 1)
     else:
         expected_child_num_threads = inner_max_num_threads
@@ -2120,6 +2131,11 @@ def test_threadpool_limitation_in_child_context(context, n_jobs, inner_max_num_t
     check_child_num_threads(
         workers_threadpool_infos, parent_info, expected_child_num_threads
     )
+
+    # Ensure limits were restored:
+    final_parent_info = _check_numpy_threadpool_limits()
+    for old, new in zip(parent_info, final_parent_info):
+        assert old["num_threads"] == new["num_threads"]
 
 
 @with_multiprocessing

@@ -14,13 +14,17 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
 
+from threadpoolctl import threadpool_limits
+
 from ._multiprocessing_helpers import mp
 from ._utils import (
     _retrieve_traceback_capturing_wrapped_call,
     _TracebackCapturingWrapper,
 )
 
-if mp is not None:
+if mp is None:
+    from os import cpu_count
+else:
     from multiprocessing.pool import ThreadPool
 
     from .executor import get_memmapping_executor
@@ -267,6 +271,20 @@ class ParallelBackendBase(metaclass=ABCMeta):
         else:
             return ThreadingBackend(nesting_level=nesting_level), None
 
+    def _n_threads_for_worker_external_libs(self, n_jobs: int) -> int:
+        """Return limit on number of threads for external libraries.
+
+        This can be used by threading backends to limit things like BLAS and
+        OpenMP.
+
+        Should for the most part match logic in `_prepare_worker_env`.
+        """
+        explicit_n_threads = self.inner_max_num_threads
+        if explicit_n_threads is None:
+            return max(cpu_count() // n_jobs, 1)
+        else:
+            return explicit_n_threads
+
     def _prepare_worker_env(self, n_jobs):
         """Return environment variables limiting threadpools in external libs.
 
@@ -326,6 +344,7 @@ class SequentialBackend(ParallelBackendBase):
     """
 
     uses_threads = True
+    supports_inner_max_num_threads = True
     supports_timeout = False
     supports_retrieve_callback = False
     supports_sharedmem = True
@@ -532,6 +551,7 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
     ThreadingBackend is used as the default backend for nested calls.
     """
 
+    supports_inner_max_num_threads = True
     supports_retrieve_callback = True
     uses_threads = True
     supports_sharedmem = True
@@ -544,6 +564,9 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
             raise FallbackToBackend(SequentialBackend(nesting_level=self.nesting_level))
         self.parallel = parallel
         self._n_jobs = n_jobs
+        self._external_libs_inner_thread_limit = (
+            self._n_threads_for_worker_external_libs(n_jobs)
+        )
         return n_jobs
 
     def _get_pool(self):
@@ -558,10 +581,12 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
         if self._pool is None:
             available_cores = effective_n_jobs(-1)
             cores_per_thread = _split_up_cores(available_cores, self._n_jobs)
-            self._pool = ThreadPool(
-                self._n_jobs,
-                initializer=lambda: _MAX_CORES.set_thread_limit(cores_per_thread),
-            )
+
+            def init():
+                _MAX_CORES.set_thread_limit(cores_per_thread)
+                threadpool_limits(limits=self._external_libs_inner_thread_limit)
+
+            self._pool = ThreadPool(self._n_jobs, initializer=init)
         return self._pool
 
 
