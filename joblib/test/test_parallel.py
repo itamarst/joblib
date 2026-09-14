@@ -27,6 +27,7 @@ import pytest
 import joblib
 from joblib import dump, load, parallel
 from joblib._multiprocessing_helpers import mp
+from joblib._parallel_backends import _SetEnvInitializer, _split_up_cores
 from joblib.test.common import (
     IS_GIL_DISABLED,
     np,
@@ -181,6 +182,43 @@ def test_effective_n_jobs_None(context, backend_n_jobs, expected_n_jobs):
         assert effective_n_jobs(n_jobs=None) == expected_n_jobs
     # without any backend, None will default to a single job
     assert effective_n_jobs(n_jobs=None) == 1
+
+
+def _measure_effective() -> tuple[int, int]:
+    return effective_n_jobs(-1), effective_n_jobs(-2)
+
+
+@parametrize("backend", PARALLEL_BACKENDS)
+def test_negative_effective_n_jobs_affected_by_parent_pool(backend):
+    """
+    Nested pools get fewer workers, approximately cpu_count() divided by
+    parent's number of workers.
+    """
+    n_jobs = max(cpu_count() // 2, 1)
+    results = set(
+        Parallel(n_jobs=n_jobs, backend=backend)(
+            (delayed(_measure_effective)() for _ in range(cpu_count() * 10))
+        )
+    )
+    assert len(results) == 1
+
+    (available_in_worker, available_in_worker_minus_1) = results.pop()
+    assert available_in_worker_minus_1 == max(available_in_worker - 1, 1)
+    # See _split_up_cores() for details:
+    expected = _split_up_cores(cpu_count(), n_jobs)
+    assert available_in_worker == expected
+
+
+def test_split_up_cores():
+    """
+    Test heuristic for determining number of workers in nested pool.
+    """
+    for max_cores in range(1, 100):
+        for n_jobs in range(1, max_cores + 1):
+            split = _split_up_cores(max_cores, n_jobs)
+            lower = max(max_cores // n_jobs, 1)
+            assert split in (lower, lower + 1)
+            assert split * n_jobs <= 1.25 * max_cores
 
 
 ###############################################################################
@@ -2259,3 +2297,26 @@ def test_initializer_not_reused(n_jobs):
     assert len(pids) == n_repetitions * n_jobs, (
         "The workers should not be reused when the initializer arguments change"
     )
+
+
+def test_set_env_initializer() -> None:
+    """
+    ``_SetEnvInitializer()`` sets environment variables and optionally calls an
+    initializer.
+    """
+    k1 = str(uuid4())
+    k2 = str(uuid4())
+    svi = _SetEnvInitializer({k1: "A", k2: "B"}, None)
+    assert k1 not in os.environ
+    assert k2 not in os.environ
+    svi()
+    assert os.environ[k1] == "A"
+    assert os.environ[k2] == "B"
+
+    mylist = []
+    svi = _SetEnvInitializer({k1: "C", k2: "D"}, mylist.append)
+    assert not mylist
+    svi(123)
+    assert os.environ[k1] == "C"
+    assert os.environ[k2] == "D"
+    assert mylist == [123]

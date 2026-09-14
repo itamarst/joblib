@@ -17,6 +17,13 @@ else
     PARALLEL_PYTEST_ARGS=""
 fi
 
+if [[ "$ONE_CPU" == "1" ]]; then
+    # Note that ONE_CPU should only be set on Linux:
+    PYTEST_PREFIX="taskset -c 0"
+else
+    PYTEST_PREFIX=""
+fi
+
 which python
 # Show python version and build information (e.g. free-threaded or not)
 python -VV
@@ -24,7 +31,7 @@ python -c "import multiprocessing as mp; print('multiprocessing.cpu_count():', m
 python -c "import joblib; print('joblib.cpu_count():', joblib.cpu_count())"
 
 if [[ "$SKLEARN_TESTS" != "true" ]]; then
-    pytest joblib -vl --timeout=120 --cov=joblib --cov-report xml $PARALLEL_PYTEST_ARGS
+    $PYTEST_PREFIX pytest joblib -vl --timeout=120 --cov=joblib --cov-report xml $PARALLEL_PYTEST_ARGS
 
     # doctests are not compatile with default_backend=threading
     if [[ "$JOBLIB_TESTS_DEFAULT_PARALLEL_BACKEND" != "threading" ]]; then
@@ -43,5 +50,5 @@ else
     NEW_TEST_DIR=$(mktemp -d)
     cd $NEW_TEST_DIR
 
-    pytest -vl --maxfail=5 -p no:doctest $PARALLEL_PYTEST_ARGS --pyargs sklearn
+    $PYTEST_PREFIX pytest -vl --maxfail=5 -p no:doctest $PARALLEL_PYTEST_ARGS --pyargs sklearn
 fi
