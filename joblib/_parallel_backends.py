@@ -281,7 +281,7 @@ class ParallelBackendBase(metaclass=ABCMeta):
         """
         explicit_n_threads = self.inner_max_num_threads
         if explicit_n_threads is None:
-            return max(cpu_count() // n_jobs, 1)
+            return max(_MAX_CORES.get() // n_jobs, 1)
         else:
             return explicit_n_threads
 
