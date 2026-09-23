@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
 
-from threadpoolctl import threadpool_limits
+from threadpoolctl import ThreadpoolController
 
 from ._multiprocessing_helpers import mp
 from ._utils import (
@@ -558,6 +558,9 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
 
     def configure(self, n_jobs=1, parallel=None, **backend_kwargs):
         """Build a process or thread pool and return the number of workers"""
+        self._threadpool_controller = ThreadpoolController()
+        # Used to restore limits when when done:
+        self._thread_limiter = self._threadpool_controller.limit()
         n_jobs = self.effective_n_jobs(n_jobs)
         if n_jobs == 1:
             # Avoid unnecessary overhead and use sequential backend instead.
@@ -584,10 +587,16 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
 
             def init():
                 _MAX_CORES.set_thread_limit(cores_per_thread)
-                threadpool_limits(limits=self._external_libs_inner_thread_limit)
+                self._threadpool_controller.limit(
+                    limits=self._external_libs_inner_thread_limit
+                )
 
             self._pool = ThreadPool(self._n_jobs, initializer=init)
         return self._pool
+
+    def terminate(self):
+        self._thread_limiter.restore_original_limits()
+        super().terminate()
 
 
 @dataclass
