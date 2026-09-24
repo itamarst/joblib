@@ -37,6 +37,7 @@ from ._parallel_backends import (
     ParallelBackendBase,  # noqa
     SequentialBackend,
     ThreadingBackend,
+    cpu_count,  # noqa
 )
 from ._utils import _Sentinel, eval_expr
 from .disk import memstr_to_bytes
@@ -60,7 +61,6 @@ MAYBE_AVAILABLE_BACKENDS = {"multiprocessing", "loky"}
 # backend
 if mp is not None:
     BACKENDS["multiprocessing"] = MultiprocessingBackend
-    from .externals import loky
 
     BACKENDS["loky"] = LokyBackend
     DEFAULT_BACKEND = "loky"
@@ -635,29 +635,6 @@ TASK_PENDING = "Pending"
 
 
 ###############################################################################
-# CPU count that works also when multiprocessing has been disabled via
-# the JOBLIB_MULTIPROCESSING environment variable
-def cpu_count(only_physical_cores=False):
-    """Return the number of CPUs.
-
-    This delegates to loky.cpu_count that takes into account additional
-    constraints such as Linux CFS scheduler quotas (typically set by container
-    runtimes such as docker) and CPU affinity (for instance using the taskset
-    command on Linux).
-
-    Parameters
-    ----------
-    only_physical_cores : boolean, default=False
-        If True, does not take hyperthreading / SMT logical cores into account.
-
-    """
-    if mp is None:
-        return 1
-
-    return loky.cpu_count(only_physical_cores=only_physical_cores)
-
-
-###############################################################################
 # For verbosity
 
 
@@ -1072,7 +1049,7 @@ class Parallel(Logger):
     timeout: float or None, default=None
         Timeout limit for each task to complete.  If any task takes longer
         a TimeOutError will be raised. Only applied when n_jobs != 1
-    pre_dispatch: {'all', integer, or expression, as in '3*n_jobs'}, default='2*n_jobs'
+    pre_dispatch: {'all', positive integer, or expression, as in '3*n_jobs'}, default='2*n_jobs'
         The number of batches (of tasks) to be pre-dispatched.
         Default is '2*n_jobs'. When batch_size="auto" this is reasonable
         default and the workers should never starve. Note that only basic
@@ -2092,6 +2069,11 @@ class Parallel(Logger):
             if hasattr(pre_dispatch, "endswith"):
                 pre_dispatch = eval_expr(pre_dispatch.replace("n_jobs", str(n_jobs)))
             self._pre_dispatch_amount = pre_dispatch = int(pre_dispatch)
+            if pre_dispatch < 1:
+                raise ValueError(
+                    "pre_dispatch must be 'all' or a positive number of "
+                    f"batches, got: {self.pre_dispatch!r}"
+                )
 
             # The main thread will consume the first pre_dispatch items and
             # the remaining items will later be lazily dispatched by async

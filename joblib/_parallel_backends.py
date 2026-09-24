@@ -11,7 +11,6 @@ import threading
 import warnings
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from math import ceil
 from typing import Any, Callable
 
 from threadpoolctl import ThreadpoolController
@@ -23,14 +22,18 @@ from ._utils import (
 )
 
 if mp is None:
-    from os import cpu_count
+    from os import cpu_count as _os_cpu_count
+
+    def system_cpu_count(only_physical_cores: bool = False) -> int:
+        return _os_cpu_count() or 1
 else:
     from multiprocessing.pool import ThreadPool
 
     from .executor import get_memmapping_executor
 
     # Import loky only if multiprocessing is present
-    from .externals.loky import cpu_count, process_executor
+    from .externals.loky import cpu_count as system_cpu_count
+    from .externals.loky import process_executor
     from .externals.loky.process_executor import ShutdownExecutorError
     from .pool import MemmappingPool
 
@@ -40,9 +43,9 @@ class _MaxCores(threading.local):
 
     _thread_limit = None
 
-    def get(self) -> int:
+    def get(self, only_physical_cores=False) -> int:
         """Number of cores available to this thread."""
-        process_limit = cpu_count()
+        process_limit = system_cpu_count(only_physical_cores)
         if self._thread_limit is None:
             return process_limit
         return min(process_limit, self._thread_limit)
@@ -55,26 +58,36 @@ class _MaxCores(threading.local):
 _MAX_CORES = _MaxCores()
 
 
+def cpu_count(only_physical_cores=False, process_wide=False) -> int:
+    """
+    Return the number of CPU cores the current thread can use.
+
+    Per-thread limits can be constrained by ``joblib.Parallel``'s threaded
+    backend: cores will be split up across the worker threads.  Additionally,
+    process-wide limits can be constrained by CPU affinity, and on Linux
+    cgroups (i.e. Docker/Kubernetes/other container systems).
+
+    If ``process_wide`` is True, ignore the per-thread limits.
+
+    If both ``process_wide`` and ``only_physical_cores`` are True, return the
+    number of physical cores instead of the number of logical cores
+    (hyperthreading / SMT).  If ``only_physical_cores`` is True and
+    ``process_wide`` is False (its default) the minimum of the two (per-thread
+    and physical limit) will be chosen, but future versions may have a smarter
+    algorithm.
+    """
+    return _MAX_CORES.get(only_physical_cores)
+
+
 def _split_up_cores(total_cores: int, n_jobs: int) -> int:
     """
     Given the total number of cores and a number of workers, come up with a
     reasonable number of cores per worker.
 
-    The algorithm tries to compromise between two extremes:
-
-    With ``total_cores // n_jobs``, you can end up not using all cores.  So e.g
-    with 16 cores and 9 workers, you end up only using 9 cores instead of 16.
-
-    With ``int(ceil(total_cores / n_jobs))``, you can end up with significant
-    over-saturation.  So e.g with 16 cores and 15 workers, you end up with 30
-    assigned cores for only 16 available ones.
+    At the moment this just does ``total_cores // n_jobs`` but a better
+    heuristic might someday be used instead.
     """
-    upper = max(int(ceil(total_cores / n_jobs)), 1)
-    lower = max(total_cores // n_jobs, 1)
-    if upper * n_jobs <= total_cores * 1.25:
-        return upper
-    else:
-        return lower
+    return max(total_cores // n_jobs, 1)
 
 
 class ParallelBackendBase(metaclass=ABCMeta):
@@ -294,7 +307,7 @@ class ParallelBackendBase(metaclass=ABCMeta):
         OpenBLAS libraries in the child processes.
         """
         explicit_n_threads = self.inner_max_num_threads
-        default_n_threads = _split_up_cores(_MAX_CORES.get(), n_jobs)
+        default_n_threads = _split_up_cores(cpu_count(), n_jobs)
 
         # Set the inner environment variables to self.inner_max_num_threads if
         # it is given. Else, default to cpu_count // n_jobs unless the variable
@@ -385,7 +398,7 @@ class PoolManagerMixin(object):
             # to sequential mode
             return 1
         elif n_jobs < 0:
-            n_jobs = max(_MAX_CORES.get() + 1 + n_jobs, 1)
+            n_jobs = max(cpu_count() + 1 + n_jobs, 1)
         return n_jobs
 
     def terminate(self):
@@ -632,6 +645,9 @@ class MultiprocessingBackend(PoolManagerMixin, AutoBatchingMixin, ParallelBacken
         This also checks if we are attempting to create a nested parallel
         loop.
         """
+        if n_jobs == 0:
+            raise ValueError("n_jobs == 0 in Parallel has no meaning")
+
         if mp is None:
             return 1
 
@@ -800,7 +816,7 @@ class LokyBackend(AutoBatchingMixin, ParallelBackendBase):
                 )
             return 1
         elif n_jobs < 0:
-            n_jobs = max(_MAX_CORES.get() + 1 + n_jobs, 1)
+            n_jobs = max(cpu_count() + 1 + n_jobs, 1)
         return n_jobs
 
     def submit(self, func, callback=None):

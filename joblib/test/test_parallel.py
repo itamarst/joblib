@@ -20,12 +20,13 @@ from multiprocessing import TimeoutError
 from pickle import PicklingError
 from time import sleep
 from traceback import format_exception
+from unittest import mock
 from uuid import uuid4
 
 import pytest
 
 import joblib
-from joblib import dump, load, parallel
+from joblib import _parallel_backends, dump, load, parallel
 from joblib._multiprocessing_helpers import mp
 from joblib._parallel_backends import _SetEnvInitializer, _split_up_cores
 from joblib.test.common import (
@@ -158,8 +159,38 @@ def parallel_func(inner_n_jobs, backend):
 
 
 ###############################################################################
-def test_cpu_count():
+def test_cpu_count_minimal():
     assert cpu_count() > 0
+
+
+@with_multiprocessing
+def test_cpu_count_variations():
+    from joblib.externals.loky import cpu_count as loky_cpu_count
+
+    assert cpu_count(process_wide=True) == loky_cpu_count()
+    assert cpu_count(process_wide=True, only_physical_cores=True) == loky_cpu_count(
+        only_physical_cores=True
+    )
+
+    # We're going to run this with n_jobs, so it should have half of the cores
+    # allocated. We do it twice to make sure there really are 2 workers, in
+    # case pool sizing gets smarter after this test is written.
+    def in_thread():
+        expected_local_count = max(loky_cpu_count() // 2, 1)
+        assert cpu_count() == expected_local_count
+        # This is a soft contract, and it may change to something smarter; see
+        # docstring for cpu_count().
+        assert cpu_count(only_physical_cores=True) == min(
+            expected_local_count, loky_cpu_count(only_physical_cores=True)
+        )
+        return True
+
+    results = list(
+        Parallel(backend="threading", n_jobs=2)(
+            [delayed(in_thread)() for _ in range(2)]
+        )
+    )
+    assert results == [True, True]
 
 
 def test_effective_n_jobs():
@@ -185,9 +216,10 @@ def test_effective_n_jobs_None(context, backend_n_jobs, expected_n_jobs):
 
 
 def _measure_effective() -> tuple[int, int]:
-    return effective_n_jobs(-1), effective_n_jobs(-2)
+    return effective_n_jobs(-1), effective_n_jobs(-2), cpu_count()
 
 
+@with_multiprocessing
 @parametrize("backend", PARALLEL_BACKENDS)
 def test_negative_effective_n_jobs_affected_by_parent_pool(backend):
     """
@@ -202,7 +234,8 @@ def test_negative_effective_n_jobs_affected_by_parent_pool(backend):
     )
     assert len(results) == 1
 
-    (available_in_worker, available_in_worker_minus_1) = results.pop()
+    (available_in_worker, available_in_worker_minus_1, cpu_count_result) = results.pop()
+    assert cpu_count_result == available_in_worker
     assert available_in_worker_minus_1 == max(available_in_worker - 1, 1)
     # See _split_up_cores() for details:
     expected = _split_up_cores(cpu_count(), n_jobs)
@@ -215,10 +248,7 @@ def test_split_up_cores():
     """
     for max_cores in range(1, 100):
         for n_jobs in range(1, max_cores + 1):
-            split = _split_up_cores(max_cores, n_jobs)
-            lower = max(max_cores // n_jobs, 1)
-            assert split in (lower, lower + 1)
-            assert split * n_jobs <= 1.25 * max_cores
+            assert _split_up_cores(max_cores, n_jobs) == max(max_cores // n_jobs, 1)
 
 
 ###############################################################################
@@ -807,6 +837,22 @@ def test_invalid_backend():
             pass
 
 
+@with_multiprocessing
+@parametrize("backend", sorted(BACKENDS.keys()))
+def test_invalid_njobs_in_daemon_process(backend):
+    # n_jobs=0 has no meaning for any backend, including inside a daemonic
+    # process (a Celery worker, say) where some backends short-circuit to 1.
+    # Going through the public effective_n_jobs rather than Parallel, because
+    # Parallel recovers from a backend returning 1 by falling back to
+    # SequentialBackend, which raises for its own reasons and hides this.
+    with mock.patch.object(_parallel_backends.mp, "current_process") as cp:
+        cp.return_value.daemon = True
+        with parallel_config(backend=backend):
+            with raises(ValueError) as excinfo:
+                joblib.effective_n_jobs(0)
+            assert "n_jobs == 0 in Parallel has no meaning" in str(excinfo.value)
+
+
 @parametrize("backend", ALL_VALID_BACKENDS)
 def test_invalid_njobs(backend):
     with raises(ValueError) as excinfo:
@@ -1105,6 +1151,16 @@ def test_retrieval_context(context, with_retrieve_callback):
 def test_invalid_batch_size(batch_size):
     with raises(ValueError):
         Parallel(batch_size=batch_size)
+
+
+@with_multiprocessing
+@parametrize("pre_dispatch", [0, -1, "0", "0*n_jobs"])
+def test_invalid_pre_dispatch(pre_dispatch):
+    """A pre_dispatch below one dispatched nothing and returned no results."""
+    with raises(ValueError, match="pre_dispatch must be"):
+        Parallel(n_jobs=2, pre_dispatch=pre_dispatch)(
+            delayed(square)(i) for i in range(4)
+        )
 
 
 @parametrize(
