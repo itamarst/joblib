@@ -839,7 +839,7 @@ def test_dispatch_one_job(backend, batch_size, expected_queue):
 
 @pytest.mark.thread_unsafe  # https://github.com/joblib/joblib/issues/1865
 @with_multiprocessing
-@parametrize("backend", PARALLEL_BACKENDS)
+@parametrize("backend", PROCESS_BACKENDS)
 def test_dispatch_multiprocessing(backend):
     """Check that using pre_dispatch Parallel does indeed dispatch items
     lazily.

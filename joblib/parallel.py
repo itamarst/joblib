@@ -1050,7 +1050,7 @@ class Parallel(Logger):
         Default is '2*n_jobs'. When batch_size="auto" this is reasonable
         default and the workers should never starve. Note that only basic
         arithmetic are allowed here and no modules can be used in this
-        expression.
+        expression. The threading backend may ignore this argument.
     batch_size: int or 'auto', default='auto'
         The number of atomic tasks to dispatch at once to each
         worker. When individual evaluations are very fast, dispatching
@@ -2046,11 +2046,7 @@ class Parallel(Logger):
         if n_jobs == 0:
             raise RuntimeError(f"{backend_name} has no active worker.")
 
-        if (
-            isinstance(self._backend, ThreadingBackend)
-            and self.timeout is None
-            and self.pre_dispatch == "2 * n_jobs"  # the default
-        ):
+        if isinstance(self._backend, ThreadingBackend) and self.timeout is None:
             output = self._get_threaded_output(iterable)
             next(output)
             return output if self.return_generator else list(output)
