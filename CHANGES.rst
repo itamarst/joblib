@@ -10,6 +10,14 @@ In Development
 - The threading backend no longer respects the ``pre_dispatch`` argument.
   https://github.com/joblib/joblib/pull/1899
 
+- Fix the ``ensure_native_byte_order`` parameter of ``numpy_pickle.load``
+  to apply correctly to structured NumPy arrays.
+  https://github.com/joblib/joblib/pull/1895
+
+- Fix ``MemorizedFunc.call`` to register the function code so subsequent regular
+  calls can reuse its cached result.
+  https://github.com/joblib/joblib/pull/1897
+
 - ``FileSystemStoreBackend`` (and hence ``Memory``) now stores its items using the format
   "abc/defghijklmnopqrstuvwxyzabcdef/output.pkl" instead of
   "abcdefghijklmnopqrstuvwxyzabcdef/output.pkl" in order to limit the number
