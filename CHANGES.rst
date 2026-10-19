@@ -4,6 +4,12 @@ Release Notes
 In Development
 --------------
 
+- The threading backend now has significantly less overhead.
+  https://github.com/joblib/joblib/pull/1899
+
+- The threading backend no longer respects the ``pre_dispatch`` argument.
+  https://github.com/joblib/joblib/pull/1899
+
 - ``FileSystemStoreBackend`` (and hence ``Memory``) now stores its items using the format
   "abc/defghijklmnopqrstuvwxyzabcdef/output.pkl" instead of
   "abcdefghijklmnopqrstuvwxyzabcdef/output.pkl" in order to limit the number
