@@ -53,7 +53,9 @@ def pytest_collection_modifyitems(config, items):
 def pytest_configure(config):
     """Setup multiprocessing logging for the tests"""
     if mp is not None:
-        log = mp.util.log_to_stderr(logging.DEBUG)
+        # DEBUG level logging can lead to deadlocks when using threading, see
+        # https://docs.python.org/3/library/logging.handlers.html#logging.handlers.QueueHandler
+        log = mp.util.log_to_stderr(logging.INFO)
         log.handlers[0].setFormatter(
             logging.Formatter(
                 "[%(levelname)s:%(processName)s:%(threadName)s] %(message)s"
