@@ -1279,6 +1279,8 @@ def test_invalid_batch_size(batch_size):
 @parametrize("pre_dispatch", [0, -1, "0", "0*n_jobs"])
 def test_invalid_pre_dispatch(pre_dispatch):
     """A pre_dispatch below one dispatched nothing and returned no results."""
+    if issubclass(_active_backend_type(), ThreadingBackend):
+        pytest.skip("Threading backend ignores pre_dispatch")
     with raises(ValueError, match="pre_dispatch must be"):
         Parallel(n_jobs=2, pre_dispatch=pre_dispatch)(
             delayed(square)(i) for i in range(4)
