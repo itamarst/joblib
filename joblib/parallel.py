@@ -2002,13 +2002,14 @@ class Parallel(Logger):
                 mapper = pool.imap
             else:
                 mapper = pool.imap_unordered
-            for res in mapper(apply, iterable, chunksize=self._get_batch_size()):
-                self.n_dispatched_batches += 1
-                self.n_dispatched_tasks += 1
-                self.n_completed_tasks += 1
-                self.print_progress()
-                yield res
-                self._nb_consumed += 1
+            with self._backend.retrieval_context():
+                for res in mapper(apply, iterable, chunksize=self._get_batch_size()):
+                    self.n_dispatched_batches += 1
+                    self.n_dispatched_tasks += 1
+                    self.n_completed_tasks += 1
+                    self.print_progress()
+                    yield res
+                    self._nb_consumed += 1
         except BaseException:
             self._exception = True
             self._aborting = True
