@@ -281,6 +281,9 @@ def _nested_second_level(n_jobs, third_level):
     )
 
 
+# Since the test depends on sleeps, slowdown from parallelism can make that
+# fragile, so don't run in parallel:
+@pytest.mark.thread_unsafe
 @with_multiprocessing
 @pytest.mark.parametrize("backend", ALL_VALID_BACKENDS)
 @pytest.mark.parametrize("nesting", [[2, -1], [-1, -1]])
