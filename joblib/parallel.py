@@ -2020,9 +2020,9 @@ class Parallel(Logger):
             self._running = False
             self._iterating = False
             self._original_iterator = None
+            self.print_progress()
             if not self._managed_backend:
                 self._backend.terminate()
-            self.print_progress()
 
     def __call__(self, iterable):
         """Main function to dispatch parallel tasks."""
