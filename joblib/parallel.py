@@ -1912,7 +1912,7 @@ class Parallel(Logger):
         try:
             # This makes relevant libraries respect cgroups, for example:
             limiter = _get_threadpool_controller().limit(
-                limits=self._backend._n_threads_for_worker_external_libs(1)
+                limits=self._backend._n_threads_for_worker_external_libs(n_jobs=1)
             )
             self._iterating = True
             self._original_iterator = iterable
