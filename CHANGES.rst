@@ -65,6 +65,10 @@ In Development
   and the like) are set.
   https://github.com/joblib/joblib/pull/1871
 
+- Environment variables like ``OMP_NUM_THREADS`` no longer override the core
+  splitting used by workers to limit OpenMP and BLAS libraries.
+  https://github.com/joblib/joblib/pull/1871
+
 - Dropped support for Python 3.10, which is now end-of-life. NumPy and
   Distributed minimum supported versions were also increased to the oldest
   versions that support 3.11.
