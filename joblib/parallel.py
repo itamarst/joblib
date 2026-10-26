@@ -1951,6 +1951,8 @@ class Parallel(Logger):
             self._iterating = False
             self._original_iterator = None
             self.print_progress()
+            if not self._managed_backend:
+                self._backend.terminate()
 
     def _reset_run_tracking(self):
         """Reset the counters and flags used to track the execution."""

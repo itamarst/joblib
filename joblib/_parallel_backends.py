@@ -14,6 +14,20 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 try:
+    from threadpoolctl import CONTROLLING_THREAD_OWNERSHIP
+except ImportError:
+    # Backwards compat for threadpoolctl 3.7 and earlier:
+    class CONTROLLING_THREAD_OWNERSHIP:
+        @staticmethod
+        def increment():
+            pass
+
+        @staticmethod
+        def decrement():
+            pass
+
+
+try:
     from threadpoolctl import get_cached_controller as _get_threadpool_controller
 except ImportError:
     from threadpoolctl import ThreadpoolController as _get_threadpool_controller
@@ -373,6 +387,10 @@ class SequentialBackend(ParallelBackendBase):
     supports_retrieve_callback = False
     supports_sharedmem = True
 
+    def configure(self, *args, **kwargs):
+        CONTROLLING_THREAD_OWNERSHIP.increment()
+        return super().configure(*args, **kwargs)
+
     def effective_n_jobs(self, n_jobs):
         """Determine the number of jobs which are going to run in parallel"""
         if n_jobs == 0:
@@ -393,6 +411,11 @@ class SequentialBackend(ParallelBackendBase):
         # SequentialBackend should neither change the nesting level, the
         # default backend or the number of jobs. Just return the current one.
         return get_active_backend()
+
+    def terminate(self):
+        result = super().terminate()
+        CONTROLLING_THREAD_OWNERSHIP.decrement()
+        return result
 
 
 class PoolManagerMixin(object):
@@ -582,13 +605,19 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
 
     def configure(self, n_jobs=1, parallel=None, **backend_kwargs):
         """Build a process or thread pool and return the number of workers"""
-        self._threadpool_controller = _get_threadpool_controller()
-        # Used to restore limits when when done:
-        self._thread_limiter = self._threadpool_controller.limit()
         n_jobs = self.effective_n_jobs(n_jobs)
         if n_jobs == 1:
             # Avoid unnecessary overhead and use sequential backend instead.
             raise FallbackToBackend(SequentialBackend(nesting_level=self.nesting_level))
+
+        CONTROLLING_THREAD_OWNERSHIP.increment()
+        self._threadpool_controller = _get_threadpool_controller()
+        # Calculate how many cores a worker will get:
+        self._worker_cores_per_thread = self._n_threads_for_worker_external_libs(n_jobs)
+        # Limit shared process-level pools, if any:
+        self._thread_limiter = self._threadpool_controller.limit(
+            limits=self._worker_cores_per_thread
+        )
         self.parallel = parallel
         self._n_jobs = n_jobs
         return n_jobs
@@ -600,17 +629,17 @@ class ThreadingBackend(PoolManagerMixin, ParallelBackendBase):
         call to apply_async.
         """
         if self._pool is None:
-            cores_per_thread = self._n_threads_for_worker_external_libs(self._n_jobs)
 
             def init():
-                set_thread_local_cpu_limit(cores_per_thread)
-                self._threadpool_controller.limit(limits=cores_per_thread)
+                set_thread_local_cpu_limit(self._worker_cores_per_thread)
+                self._threadpool_controller.limit(limits=self._worker_cores_per_thread)
 
             self._pool = ThreadPool(self._n_jobs, initializer=init)
         return self._pool
 
     def terminate(self):
         self._thread_limiter.restore_original_limits()
+        CONTROLLING_THREAD_OWNERSHIP.decrement()
         super().terminate()
 
 
