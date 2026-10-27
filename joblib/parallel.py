@@ -1987,12 +1987,10 @@ class Parallel(Logger):
 
         def apply(params):
             f, args, kwargs = params
-            try:
-                nested_backend, nested_n_jobs = nested.backend_and_jobs
-            except AttributeError:
-                nested_backend, nested_n_jobs = nested.backend_and_jobs = (
-                    self._backend.get_nested_backend()
-                )
+            if not hasattr(nested, "backend"):
+                nested.backend, nested.n_jobs = self._backend.get_nested_backend()
+            nested_backend, nested_n_jobs = nested.backend, nested.n_jobs
+
             with parallel_config(backend=nested_backend, n_jobs=nested_n_jobs):
                 return f(*args, **kwargs)
 
