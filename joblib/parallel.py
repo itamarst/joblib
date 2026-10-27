@@ -1992,7 +1992,10 @@ class Parallel(Logger):
             nested_backend, nested_n_jobs = nested.backend, nested.n_jobs
 
             with parallel_config(backend=nested_backend, n_jobs=nested_n_jobs):
-                return f(*args, **kwargs)
+                try:
+                    return True, f(*args, **kwargs)
+                except BaseException as e:
+                    return False, e
 
         try:
             self._pre_dispatch_amount = 0  # for print_progess()
@@ -2011,12 +2014,17 @@ class Parallel(Logger):
             else:
                 mapper = pool.imap_unordered
             with self._backend.retrieval_context():
-                for res in mapper(apply, iterable, chunksize=self._get_batch_size()):
+                for success, res in mapper(
+                    apply, iterable, chunksize=self._get_batch_size()
+                ):
                     self.n_dispatched_batches += 1
                     self.n_dispatched_tasks += 1
                     self.n_completed_tasks += 1
                     self.print_progress()
-                    yield res
+                    if success:
+                        yield res
+                    else:
+                        raise res
                     self._nb_consumed += 1
         except BaseException:
             self._exception = True
