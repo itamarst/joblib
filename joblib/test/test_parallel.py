@@ -684,7 +684,7 @@ def test_parallel_timeout_fail_with_generator(backend, return_as):
 
 
 @with_multiprocessing
-@parametrize("backend", PROCESS_BACKENDS)
+@parametrize("backend", BACKENDS)
 def test_error_capture(backend):
     # Check that error are captured, and that correct exceptions
     # are raised.
