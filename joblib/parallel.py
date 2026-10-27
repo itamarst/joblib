@@ -1997,6 +1997,7 @@ class Parallel(Logger):
                 return f(*args, **kwargs)
 
         try:
+            self._pre_dispatch_amount = 0  # for print_progess()
             self._iterating = True
             self._original_iterator = iterable
 
