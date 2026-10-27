@@ -1980,10 +1980,19 @@ class Parallel(Logger):
 
     def _get_threaded_output(self, iterable):
         """Fast path for dispatching threaded parallel tasks."""
-        nested_backend, nested_n_jobs = self._backend.get_nested_backend()
+        # Each worker thread needs its own nested backend instance: nested
+        # Parallel calls configure it, and they can run concurrently in
+        # different worker threads.
+        nested = threading.local()
 
         def apply(params):
             f, args, kwargs = params
+            try:
+                nested_backend, nested_n_jobs = nested.backend_and_jobs
+            except AttributeError:
+                nested_backend, nested_n_jobs = nested.backend_and_jobs = (
+                    self._backend.get_nested_backend()
+                )
             with parallel_config(backend=nested_backend, n_jobs=nested_n_jobs):
                 return f(*args, **kwargs)
 
