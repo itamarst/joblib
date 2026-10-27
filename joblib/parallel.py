@@ -2056,7 +2056,7 @@ class Parallel(Logger):
         if n_jobs == 0:
             raise RuntimeError(f"{backend_name} has no active worker.")
 
-        if isinstance(self._backend, ThreadingBackend) and self.timeout is None:
+        if type(self._backend) is ThreadingBackend and self.timeout is None:
             output = self._get_threaded_output(iterable)
             next(output)
             return output if self.return_generator else list(output)
