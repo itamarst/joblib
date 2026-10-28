@@ -2030,7 +2030,8 @@ class Parallel(Logger):
             self._exception = True
             self._aborting = True
             self._aborted = True
-            self._backend.terminate()
+            # Don't actually terminate here, rely on finally; an exception
+            # doesn't impact the pool since it will get caught in apply().
             raise
         finally:
             self._running = False

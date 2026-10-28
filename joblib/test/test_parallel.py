@@ -684,7 +684,7 @@ def test_parallel_timeout_fail_with_generator(backend, return_as):
 
 
 @with_multiprocessing
-@parametrize("backend", BACKENDS)
+@parametrize("backend", PARALLEL_BACKENDS)
 def test_error_capture(backend):
     # Check that error are captured, and that correct exceptions
     # are raised.
@@ -701,8 +701,9 @@ def test_error_capture(backend):
 
         # Try again with the context manager API
         with Parallel(n_jobs=2, backend=backend) as parallel:
+            # Initialize workers:
+            list(parallel([delayed(f)(1, 1)]))
             assert get_workers(parallel._backend) is not None
-            original_workers = get_workers(parallel._backend)
 
             with raises(ZeroDivisionError):
                 parallel([delayed(division)(x, y) for x, y in zip((0, 1), (1, 0))])
@@ -711,23 +712,20 @@ def test_error_capture(backend):
             # state despite the previously raised (and caught) exception
             assert get_workers(parallel._backend) is not None
 
-            # The pool should have been interrupted and restarted:
-            assert get_workers(parallel._backend) is not original_workers
-
             assert [f(x, y=1) for x in range(10)] == parallel(
                 delayed(f)(x, y=1) for x in range(10)
             )
 
-            original_workers = get_workers(parallel._backend)
             with raises(KeyboardInterrupt):
                 parallel([delayed(interrupt_raiser)(x) for x in (1, 0)])
-
             # The pool should still be available despite the exception
             assert get_workers(parallel._backend) is not None
 
-            # The pool should have been interrupted and restarted:
-            assert get_workers(parallel._backend) is not original_workers
-
+            # We started with two workers, then raised two exceptions. If the
+            # pool was losing a worker per exception, we wouldn't be able to
+            # run anything at this point. So getting results implies either the
+            # pool got restarted, or that exceptions don't remove workers from
+            # the pool. Either is fine.
             assert [f(x, y=1) for x in range(10)] == parallel(
                 delayed(f)(x, y=1) for x in range(10)
             ), (
