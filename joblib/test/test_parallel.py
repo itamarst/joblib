@@ -690,7 +690,7 @@ def test_error_capture(backend):
     # are raised.
     if mp is not None:
         with raises(ZeroDivisionError):
-            Parallel(n_jobs=2, backend=backend)(
+            Parallel(n_jobs=2, backend=backend, verbose=100)(
                 [delayed(division)(x, y) for x, y in zip((0, 1), (1, 0))]
             )
 
