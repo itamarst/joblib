@@ -25,6 +25,7 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
+from threadpoolctl import threadpool_info
 
 import joblib
 from joblib import _parallel_backends, dump, load, parallel
@@ -2294,7 +2295,7 @@ def test_threadpool_limitation_in_child_loky(n_jobs):
 @parametrize("context", [parallel_config, parallel_backend])
 @parametrize("backend", ["loky", "threading", "sequential"])
 @parametrize("return_as", ["list", "generator", "generator_unordered"])
-def test_threadpool_limitation_in_child_context(
+def test_third_party_threadpool_limitation_in_child_context(
     return_as, backend, context, n_jobs, inner_max_num_threads
 ):
     """Validate protection against OpenMP/BLAS oversubscription."""
@@ -2308,18 +2309,22 @@ def test_threadpool_limitation_in_child_context(
     if len(parent_info) == 0:
         pytest.skip(reason="Need a version of numpy linked to BLAS")
 
-    with context(backend, inner_max_num_threads=inner_max_num_threads):
-        workers_threadpool_infos = list(
-            Parallel(n_jobs=n_jobs, return_as=return_as)(
-                delayed(_check_numpy_threadpool_limits)() for i in range(2)
-            )
-        )
-
-    n_jobs = 1 if backend == "sequential" else effective_n_jobs(n_jobs)
+    expected_n_jobs = 1 if backend == "sequential" else effective_n_jobs(n_jobs)
     if inner_max_num_threads is None:
-        expected_child_num_threads = max(cpu_count() // n_jobs, 1)
+        expected_child_num_threads = max(cpu_count() // expected_n_jobs, 1)
     else:
         expected_child_num_threads = inner_max_num_threads
+
+    with context(backend, inner_max_num_threads=inner_max_num_threads):
+        with Parallel(n_jobs=n_jobs, return_as=return_as) as parallel:
+            if backend == "threading":
+                # Main thread also sets limit, for things like OpenBLAS
+                # w/pthreads:
+                for lib_controller in threadpool_info():
+                    assert lib_controller["num_threads"] == expected_child_num_threads
+            workers_threadpool_infos = list(
+                parallel(delayed(_check_numpy_threadpool_limits)() for _ in range(2))
+            )
 
     check_child_num_threads(
         workers_threadpool_infos, parent_info, expected_child_num_threads
