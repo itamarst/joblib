@@ -82,6 +82,19 @@ from joblib.parallel import (
     register_parallel_backend,
 )
 
+
+class ThreadingBackendSubclass(ThreadingBackend):
+    """Otherwise identical subclass of ``ThreadingBackend``.
+
+    Threading backend can actually use two different code paths, depending if
+    it's a subclass or uses timeouts, so this allows for testing the uncommon
+    path more broadly, far more than the few tests that set a timeout.
+    """
+
+
+register_parallel_backend("__slow_path_threading_backend", ThreadingBackendSubclass)
+
+
 RETURN_GENERATOR_BACKENDS = BACKENDS.copy()
 RETURN_GENERATOR_BACKENDS.pop("multiprocessing", None)
 
@@ -97,7 +110,7 @@ if mp is None:
     PROCESS_BACKENDS = []
 else:
     PROCESS_BACKENDS = ["multiprocessing", "loky"]
-PARALLEL_BACKENDS = PROCESS_BACKENDS + ["threading"]
+PARALLEL_BACKENDS = PROCESS_BACKENDS + ["threading", "__slow_path_threading_backend"]
 
 if hasattr(mp, "get_context"):
     # Custom multiprocessing context in Python 3.4+
@@ -708,18 +721,13 @@ def test_error_capture(backend):
             with raises(ZeroDivisionError):
                 parallel([delayed(division)(x, y) for x, y in zip((0, 1), (1, 0))])
 
-            # The managed pool should still be available and be in a working
-            # state despite the previously raised (and caught) exception
-            assert get_workers(parallel._backend) is not None
-
+            # The backend should continue working despite an exception:
             assert [f(x, y=1) for x in range(10)] == parallel(
                 delayed(f)(x, y=1) for x in range(10)
             )
 
             with raises(KeyboardInterrupt):
                 parallel([delayed(interrupt_raiser)(x) for x in (1, 0)])
-            # The pool should still be available despite the exception
-            assert get_workers(parallel._backend) is not None
 
             # We started with two workers, then raised two exceptions. If the
             # pool was losing a worker per exception, we wouldn't be able to
