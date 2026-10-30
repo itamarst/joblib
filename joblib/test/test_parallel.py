@@ -2395,6 +2395,7 @@ def test_controlling_thread_openblas_non_openmp(n_jobs):
     if cpu_count() < 3:
         pytest.skip("Need at least 3 cores")
 
+    ok = []
     for openblas_lib in openblas_controller.lib_controllers:
         if (
             openblas_lib.threading_layer == "openmp"
@@ -2402,7 +2403,11 @@ def test_controlling_thread_openblas_non_openmp(n_jobs):
         ):
             continue
         else:
-            break
+            ok.append(openblas_lib)
+    if not ok:
+        return
+
+    openblas_lib = ok[0]
 
     # For n_jobs=1 this will become sequential backend, so we can test both:
     Parallel(backend="threading", n_jobs=n_jobs, return_as="list")(
