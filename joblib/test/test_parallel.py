@@ -19,13 +19,14 @@ from contextlib import nullcontext
 from math import sqrt
 from multiprocessing import TimeoutError
 from pickle import PicklingError
+from threading import Thread
 from time import sleep
 from traceback import format_exception
 from unittest import mock
 from uuid import uuid4
 
 import pytest
-from threadpoolctl import threadpool_info
+from threadpoolctl import ThreadpoolController, threadpool_info
 
 import joblib
 from joblib import _parallel_backends, dump, load, parallel
@@ -2375,6 +2376,45 @@ def test_threadpool_limitation_in_child_override(context, var_name):
             del os.environ[var_name]
         else:
             os.environ[var_name] = original_var_value
+
+
+@with_multiprocessing
+@pytest.mark.parametrize("n_jobs", [1, 2])
+def test_controlling_thread_openblas_non_openmp(n_jobs):
+    """OpenBLAS controlling thread gets cleared appropriately.
+
+    OpenBLAS without OpenMP has a concept of a controlling thread in
+    threadpoolctl, make sure it's cleared at the end of Parallel.
+    """
+    openblas_controller = ThreadpoolController().select(internal_api="openblas")
+
+    if not openblas_controller.lib_controllers:
+        pytest.skip("requires OpenBLAS.")
+
+    for openblas_lib in openblas_controller.lib_controllers:
+        if (
+            openblas_lib.threading_layer == "openmp"
+            or openblas_lib.get_num_threads() > 2
+        ):
+            continue
+        else:
+            break
+
+    # For n_jobs=1 this will become sequential backend, so we can test both:
+    Parallel(backend="threading", n_jobs=n_jobs, return_as="list")(
+        delayed(lambda: None)() for _ in range(2)
+    )
+
+    # Now that Parallel is done, we should be able to set limits from another
+    # thread:
+    current = openblas_lib.get_num_threads()
+    assert current > 1
+
+    t = Thread(target=lambda: openblas_lib.set_num_threads(1))
+    t.start()
+    t.join()
+    assert openblas_lib.get_num_threads() == 1
+    openblas_lib.set_num_threads(current)
 
 
 @with_multiprocessing
