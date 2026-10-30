@@ -2378,6 +2378,7 @@ def test_threadpool_limitation_in_child_override(context, var_name):
             os.environ[var_name] = original_var_value
 
 
+@pytest.mark.thread_unsafe  # OpenBLAS's pool is a process-wide shared resource
 @with_multiprocessing
 @pytest.mark.parametrize("n_jobs", [1, 2])
 def test_controlling_thread_openblas_non_openmp(n_jobs):
