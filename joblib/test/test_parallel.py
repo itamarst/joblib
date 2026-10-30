@@ -2392,10 +2392,13 @@ def test_controlling_thread_openblas_non_openmp(n_jobs):
     if not openblas_controller.lib_controllers:
         pytest.skip("requires OpenBLAS.")
 
+    if cpu_count() < 3:
+        pytest.skip("Need at least 3 cores")
+
     for openblas_lib in openblas_controller.lib_controllers:
         if (
             openblas_lib.threading_layer == "openmp"
-            or openblas_lib.get_num_threads() > 2
+            or openblas_lib.get_num_threads() < 3
         ):
             continue
         else:
